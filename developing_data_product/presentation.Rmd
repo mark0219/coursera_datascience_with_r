@@ -1,0 +1,45 @@
+---
+title: "Smart Iris Classifier"
+author: "Mark Zhang"
+date: "July 21, 2018"
+output:
+  ioslides_presentation: default
+  slidy_presentation: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+require(caret)
+inTrain <- createDataPartition(y = iris$Species, p = 0.8, list = F)
+trainSet <- iris[inTrain,]
+testSet <- iris[-inTrain,]
+```
+
+## Introduction
+
+The Smart Iris Classifier is capable of classfying different species of Iris given the length and width of sepal and petal. By entering the 4 measurements of an Iris, the classifier will tell you whether it's setosa, versicolor, or virginica. The test accuracy is above 95%!
+
+## How it works?
+
+The core engine of this classifier is a Random Forest algorithm trained on 150 rows of data. With the cutting-edge technologies such as RStudio and Caret, the process of training can be done fairly efficiently.
+
+Here's the code:
+```{r, echo=TRUE}
+trControl <- trainControl(method = 'cv', number = 10)
+fit_rf <- train(Species ~ ., 
+                method = 'rf',
+                data = trainSet,
+                trControl = trControl)
+```
+
+## Test accuracy
+
+```{r, echo = T, comment=''}
+confusionMatrix(predict(fit_rf$finalModel, testSet), testSet$Species)
+```
+
+## Conclusion
+
+- Random Forest does the magic behind the scene
+- This was made possible by the *era of data*
+- The combination of RStudio, Coursera, and Johns Hopkins saves the day!
