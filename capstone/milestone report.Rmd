@@ -1,0 +1,257 @@
+---
+title: "Capstone - Milestone Report"
+author: "Mark Zhang"
+date: "July 26, 2018"
+output: html_document
+---
+
+### Overview
+
+This report contains analysis for three text files with content parsed from Twitter, blog, and news. We concern to answer two questions:
+
+1. What are the top-ten most frequently used words, 2-grams, and 3-grams in these three documents?
+2. In each of these three documents, how many unique words do we need to cover 50% and 90% of all the words instances respectively?
+
+### Require Packages and General Setups
+
+```{r setup, message=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = F, warning = F, fig.align = 'center')
+require(ggplot2)
+require(tm)
+require(SnowballC)
+require(magrittr)
+require(slam)
+require(dplyr)
+require(grid)
+require(gridExtra)
+require(RWeka)
+require(NLP)
+```
+
+### Custom Functions Module
+
+I wrote a series of functions to make unnecessary repetitive actions more succinct.
+```{r}
+#Read text files and then take sample
+readSample <- function (file, p=0.01) {
+    set.seed(0871)
+    con <- file(paste('source_data/en_US/', file, sep = ''), open = 'r')
+    textFile <- readLines(con)
+    close(con)
+    n <- length(textFile)
+    sampledIdx <- sample(1:n, ceiling(n*p))
+    return(textFile[sampledIdx])
+}
+
+#Convert text character vector to corpus and then cleanse the corpus
+textCleanse <- function (corpus) {
+    corpus <- tm_map(corpus, content_transformer(removeNumbers)) %>%
+        tm_map(content_transformer(removePunctuation)) %>%
+        tm_map(content_transformer(tolower)) %>%
+        tm_map(content_transformer(removeWords), stopwords("english")) %>%
+        tm_map(content_transformer(stemDocument)) %>%
+        tm_map(content_transformer(stripWhitespace))
+    return(corpus)
+}
+
+#Draw words frequency plot
+wordsFreqPlot <- function (dtm, n = 10, title = '', color = 'red', horizontal = F) {
+    sumVec <- col_sums(dtm, na.rm = T)
+    sumVec <- data.frame(frequency = sumVec, terms = names(sumVec))
+    sumVec <- sumVec[order(sumVec$frequency, decreasing = T),][1:n,]
+    sumVec <- mutate(sumVec, terms = factor(terms, levels = as.character(terms)))
+
+    g <- ggplot(sumVec, aes(terms, frequency)) + 
+        geom_bar(stat = 'identity', fill = color, col = 'black', alpha = 0.4) + 
+        theme(axis.text = element_text(angle = 45, hjust = 1)) + 
+        ylab('Count') + 
+        xlab('') + 
+        labs(title = title)
+    
+    if (horizontal == F) return(g)
+    else return(g + coord_flip())
+
+}
+
+#Draw Pareto chart
+pareto <- function (dtm, title = '', color = 'red') {
+    sumVec <- col_sums(dtm, na.rm = T)
+    sumVec <- data.frame(frequency = sumVec, terms = names(sumVec))
+    sumVec <- sumVec[order(sumVec$frequency, decreasing = T),]
+    sumVec <- mutate(sumVec, 
+                     terms = factor(terms, levels = as.character(terms)),
+                     freq_cumsum = cumsum(frequency),
+                     freq_cum_perc = freq_cumsum/sum(frequency))
+
+    scaler <- max(sumVec$frequency)
+    
+    g <- ggplot(sumVec, aes(terms, frequency)) + 
+        geom_bar(stat = 'identity', fill = color, size = 10) + 
+        geom_line(aes(as.numeric(terms), freq_cum_perc*scaler), color = 'green', size = 0.3) + 
+        scale_y_continuous(sec.axis = sec_axis(~./scaler, name = "Cumulative Percentage")) + 
+        theme(axis.title.x=element_blank(),
+              axis.text.x=element_blank(),
+              axis.ticks.x=element_blank()) + 
+        ylab('Count') + 
+        xlab('') + 
+        labs(title = title) + 
+        geom_hline(yintercept = c(scaler/2, scaler*0.9), color = 'black', alpha = 0.3, size = 0.3)
+    
+    return(g)
+
+}
+
+#Tokenization functions
+TwGram <- function(x) NGramTokenizer(x, Weka_control(min = 2, max = 2))
+ThrGram <- function(x) NGramTokenizer(x, Weka_control(min = 3, max = 3))
+
+#Prim DTM function
+aggDTM <- function(dtm) {
+    sumVec <- col_sums(dtm, na.rm = T)
+    sumVec <- data.frame(frequency = sumVec, terms = names(sumVec))
+    sumVec <- sumVec[order(sumVec$frequency, decreasing = T),]
+    rownames(sumVec) <- NULL
+    
+    return(sumVec)
+}
+
+#Words coverage calculator
+wordsCoverage <- function(x, p = 0.5) {
+    dtm <- DocumentTermMatrix(x)
+    sumVec <- col_sums(dtm, na.rm = T)
+    sumVec <- data.frame(frequency = sumVec, terms = names(sumVec))
+    sumVec <- sumVec[order(sumVec$frequency, decreasing = T),]
+    sumVec <- mutate(sumVec, 
+                     terms = factor(terms, levels = as.character(terms)),
+                     freq_cumsum = cumsum(frequency),
+                     freq_cum_perc = freq_cumsum/sum(frequency))
+    
+    tableSubset <- filter(sumVec, freq_cum_perc <= p)
+    numWords <- length(unique(tableSubset$terms))
+    
+    return(numWords)
+}
+```
+
+### Read Data
+```{r}
+#print(dir('source_data/en_US/'))
+twitter_sampled <- readSample("en_US.twitter.txt", p = 0.01)
+blogs_sampled <- readSample("en_US.blogs.txt", p = 0.01)
+news_sampled <- readSample("en_US.news.txt", p = 0.01)
+```
+
+### Task 1 - Getting and Cleaning Data
+
+Convert the sampled text files to corpuses, and then cleanse the corpuses.
+Steps involved in cleansing are:
+
+* Remove numbers
+* Convert to lower case
+* Remove English stop words
+* Stem documents
+* Strip white spaces
+```{r}
+#Convert text into corpus
+corpus_sampled_ttr <- Corpus(VectorSource(twitter_sampled))
+corpus_sampled_blgs <- Corpus(VectorSource(blogs_sampled))
+corpus_sampled_news <- Corpus(VectorSource(news_sampled))
+
+#Cleanse corpus
+corpus_sampled_ttr <- textCleanse(corpus_sampled_ttr)
+corpus_sampled_blgs <- textCleanse(corpus_sampled_blgs)
+corpus_sampled_news <- textCleanse(corpus_sampled_news)
+```
+
+### Task 2 - Exploratory Data Analysis
+
+After the cleansing step, the corpuses are ready for analysis. We first examine the top-ten words appear in 3 documents.
+```{r, fig.asp=0.45}
+grid.arrange(wordsFreqPlot(DocumentTermMatrix(corpus_sampled_ttr), n = 10, 
+                           title = 'Twitter Texts', color = 'red'),
+             wordsFreqPlot(DocumentTermMatrix(corpus_sampled_blgs), n = 10, 
+                           title = 'Blogs Texts', color = 'yellow'),
+             wordsFreqPlot(DocumentTermMatrix(corpus_sampled_news), n = 10, 
+                           title = 'News Texts', color = 'blue'), ncol = 3)
+```
+
+Table of top-ten words:
+```{r, echo=F}
+print(cbind(aggDTM(DocumentTermMatrix(corpus_sampled_ttr))[1:10,],
+            aggDTM(DocumentTermMatrix(corpus_sampled_blgs))[1:10,],
+            aggDTM(DocumentTermMatrix(corpus_sampled_news))[1:10,]))
+```
+
+Now we examine top-ten most frequent 2-grams in the documents.
+```{r, fig.asp=0.45}
+grid.arrange(wordsFreqPlot(DocumentTermMatrix(corpus_sampled_ttr, control = list(tokenize = TwGram)), 
+                           n = 10, title = 'Twitter Texts', color = 'red'),
+             wordsFreqPlot(DocumentTermMatrix(corpus_sampled_blgs, control = list(tokenize = TwGram)), 
+                           n = 10, title = 'Blogs Texts', color = 'yellow'),
+             wordsFreqPlot(DocumentTermMatrix(corpus_sampled_news, control = list(tokenize = TwGram)), 
+                           n = 10, title = 'News Texts', color = 'blue'), ncol = 3)
+```
+
+Table of top-ten 2-grams:
+```{r, echo=F}
+print(cbind(aggDTM(DocumentTermMatrix(corpus_sampled_ttr, control = list(tokenize = TwGram)))[1:10,],
+            aggDTM(DocumentTermMatrix(corpus_sampled_blgs, control = list(tokenize = TwGram)))[1:10,],
+            aggDTM(DocumentTermMatrix(corpus_sampled_news, control = list(tokenize = TwGram)))[1:10,]))
+```
+
+Finally we examine top-ten most frequent 3-gramns in the documents.
+```{r, fig.asp=0.45}
+grid.arrange(wordsFreqPlot(DocumentTermMatrix(corpus_sampled_ttr, control = list(tokenize = ThrGram)), 
+                           n = 10, title = 'Twitter Texts', color = 'red'),
+             wordsFreqPlot(DocumentTermMatrix(corpus_sampled_blgs, control = list(tokenize = ThrGram)), 
+                           n = 10, title = 'Blogs Texts', color = 'yellow'),
+             wordsFreqPlot(DocumentTermMatrix(corpus_sampled_news, control = list(tokenize = ThrGram)), 
+                           n = 10, title = 'News Texts', color = 'blue'), ncol = 3)
+```
+
+Table of top-ten 3-grams:
+
+```{r, echo=F}
+print(cbind(aggDTM(DocumentTermMatrix(corpus_sampled_ttr, control = list(tokenize = ThrGram)))[1:10,],
+            aggDTM(DocumentTermMatrix(corpus_sampled_blgs, control = list(tokenize = ThrGram)))[1:10,],
+            aggDTM(DocumentTermMatrix(corpus_sampled_news, control = list(tokenize = ThrGram)))[1:10,]))
+```
+
+One interesting question: how many unique words are needed to cover 50% of the words instances? We will visualize the answer to this problem by using Pareto chart. What unique about the Pareto chart is that it allows you to see the percentage of "x" needed in order to accumulate any percentage amount of "y" of your interest. In our case, let's use 50% and 90% as our interest of y threshold (Indicated by two gray horizontal lines). We will examine each document separately. Let's take a look the Twitter document first.
+```{r}
+numWords50 <- wordsCoverage(corpus_sampled_ttr, 0.5)
+numWords90 <- wordsCoverage(corpus_sampled_ttr, 0.9)
+pareto(DocumentTermMatrix(corpus_sampled_ttr), title = 'Twitter Pareto', color = 'red')
+```
+As we can see from the chart, to achieve 50% of coverage, we only need `r numWords50` unique words and `r numWords90` unique words for 90% coverage.
+
+We examine this for blog documents as well.
+```{r}
+numWords50 <- wordsCoverage(corpus_sampled_blgs, 0.5)
+numWords90 <- wordsCoverage(corpus_sampled_blgs, 0.9)
+pareto(DocumentTermMatrix(corpus_sampled_blgs), title = 'Blog Pareto', color = 'yellow')
+```
+For blog documents, `r numWords50` unique words will cover 50% of all words instances and `r numWords90` to cover 90%.
+
+Finally, we examine the new document to conclude the exploratory analysis secsion.
+```{r}
+numWords50 <- wordsCoverage(corpus_sampled_news, 0.5)
+numWords90 <- wordsCoverage(corpus_sampled_news, 0.9)
+pareto(DocumentTermMatrix(corpus_sampled_news), title = 'News Pareto', color = 'blue')
+```
+As the chart shows, 50% coverage is achieved with `r numWords50` unique words and 90% achieved with `r numWords90` unique words.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
