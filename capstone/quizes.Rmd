@@ -1,0 +1,62 @@
+---
+title: "Capstone Quizes"
+author: "Mark Zhang"
+date: "July 22, 2018"
+output: html_document
+---
+
+```{r setup, include=FALSE, message=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = F, fig.align = 'center')
+```
+
+```{r}
+con_blogs <- file('source_data/en_US/en_US.blogs.txt', open = 'r')
+con_news <- file('source_data/en_US/en_US.news.txt', open = 'r')
+con_twitters <- file('source_data/en_US/en_US.twitter.txt', open = 'r')
+text_blogs <- readLines(con_blogs)
+text_news <- readLines(con_news)
+text_twitters <- readLines(con_twitters)
+close(con_blogs)
+close(con_news)
+close(con_twitters)
+```
+
+##Week 1
+
+####Q1
+200M
+
+####Q2
+```{r}
+length(text_twitters)
+```
+
+####Q3
+```{r}
+max(sapply(text_blogs, nchar))
+max(sapply(text_news, nchar))
+max(sapply(text_twitters, nchar))
+```
+
+####Q4
+```{r}
+numerator <- 'love'
+denominator <- 'hate'
+length(text_twitters[grepl(numerator, text_twitters)]) / length(text_twitters[grepl(denominator, text_twitters)])
+```
+
+####Q5
+```{r}
+text_twitters[grepl('biostats', text_twitters)]
+```
+
+####Q6
+```{r}
+search_content <- 'A computer once beat me at chess, but it was no match for me at kickboxing'
+length(text_twitters[grepl(search_content, text_twitters)])
+```
+
+
+
+
+

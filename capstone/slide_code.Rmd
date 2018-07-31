@@ -1,0 +1,33 @@
+---
+title: "Capstone - Word Predictor"
+author: "Mark Zhang"
+date: "July 30, 2018"
+output: ioslides_presentation
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+## Introduction
+
+When we type text messages in our cellphone, we usually see words that are suggested to type next pop up on screen. If the suggestions are correct, we can simply click the word and save the time to spell out the word. This [app](https://mark0219.shinyapps.io/Next_Word_Predictor/) tries to re-create this function by using an N-Gram model to predict/suggest for the next word given the previous content you have typed.
+
+## Data and Process
+
+The data used to develop this app were three files containing textual content parsed from Twitter, Blogs, and News. We created four tables containing different number of grams (two-gram, three-gram, four-gram, and five-gram), so that our algorithm can search through these tables.
+
+## How It Works?
+
+When ever user gives any number of words or a sentence, the algorithm would start searching the most probable following word based on the last four consecutive words in the input. If there is/are match(es), the word with the highest frequency gets returned as the result. If there is no match, the algorithm would widen the searching perimeter by looking through the last three consecutive words in the input, so on and so forth.
+
+## Other Resources
+
+Exploratory data analysis part of the corpuses
+<http://rpubs.com/mark0219/407800>
+
+Text mining infrastructure in R
+<https://www.jstatsoft.org/article/view/v025i05>
+
+Natural language processing Wiki page
+<https://en.wikipedia.org/wiki/Natural_language_processing>
